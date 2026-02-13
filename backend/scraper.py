@@ -54,31 +54,37 @@ def extract_video_url(share_url):
                     if size is not None:
                         candidates.append({'url': url, 'size': size})
 
-            # 1. Check for 'entries' (Playlist)
+            # 1. Process entries - ONLY trust the first one to avoid random suggestions
             if 'entries' in info_dict:
                 entries = list(info_dict['entries'])
-                # Check first 10 entries to be safe
-                for entry in entries[:10]:
-                    add_candidate(entry)
-            
-            # 2. Check for single video in top-level
+                if entries:
+                    # The first entry is the actual post video
+                    primary_entry = entries[0]
+                    add_candidate(primary_entry)
+                    
+                    # If the primary entry has its own formats, add them too
+                    formats = primary_entry.get('formats', [])
+                    for f in formats:
+                        if f.get('url'):
+                            add_candidate(f)
+                else:
+                    add_candidate(info_dict)
             else:
                 add_candidate(info_dict)
 
-            # 3. If no URL yet, check formats
+            # 2. Check formats in top-level if still no candidates
             if not candidates and 'formats' in info_dict:
                  formats = info_dict.get('formats', [])
-                 # Filter mostly likely useful formats
-                 video_formats = [f for f in formats if f.get('url') and (f.get('vcodec') != 'none' or f.get('ext') == 'mp4')]
-                 if video_formats:
-                     # Just take the best one from formats if we are here
-                     add_candidate(video_formats[-1])
+                 for f in formats:
+                     if f.get('url'):
+                         add_candidate(f)
 
-            # Select the largest video
+            # Select the largest video from our validated candidates (all matching the primary content)
             if candidates:
-                # Sort by size descending
-                candidates.sort(key=lambda x: x['size'], reverse=True)
-                best_video = candidates[0]
+                # Remove duplicates and sort by size
+                unique_candidates = {c['url']: c for c in candidates}.values()
+                sorted_candidates = sorted(unique_candidates, key=lambda x: x['size'], reverse=True)
+                best_video = sorted_candidates[0]
                 return best_video['url']
                 
     except Exception as e:
