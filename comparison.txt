@@ -1,0 +1,10 @@
+Testing URL: https://www.meta.ai/@tonz1959/post/OY6KfFbJ9iU/
+
+--- Method 1: yt-dlp ---
+Found playlist with 7 entries.
+Entry 0 Title: @tonz1959 (1)
+Entry 0 URL: https://video.farn2-2.fna.fbcdn.net/o1/v/t2/f2/m412/AQPkAZREj4_ENcvSIJ7Y3npT1p1DCgG3mFiRgrxG5pnJh37CTdwx1vobUksgbeetWMA09Sc6q7eJL07qDZy00-saI2THAwNAXlyFFKQ.mp4?_nc_cat=105&_nc_oc=AdnJXbS8micBrwTGU-yic4vFvbv6teRv6NRIgQmu8zyUayW3pCiljOGbfl6ZJdJloe-7K8vbCuig8yfMRvVnbZfM&_nc_sid=5e9851&_nc_ht=video.farn2-2.fna.fbcdn.net&_nc_ohc=fXwBwxxumlkQ7kNvwHSGU6D&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5WSV9VU0VDQVNFX1BST0RVQ1RfVFlQRS4uQzMuNDY0LmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjE1MTc1OTY3MDAwNzQ0NTUsImFzc2V0X2FnZV9kYXlzIjoxOCwidmlfdXNlY2FzZV9pZCI6MTA5ODAsImR1cmF0aW9uX3MiOjksInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=5a402bfc2d190b34&_nc_vs=HBksFQIYQGZiX3Blcm1hbmVudC9ERDQ5M0MyRjdCMzI1ODE5NEI2ODMyQ0MzQjUxMDdBQV92aWRlb19kYXNoaW5pdC5tcDQVAALIARIAFQIYQGZiX3Blcm1hbmVudC9DNTREMEI4QzAxQzNBMTMwNDIxMDBEMEJCNTMxODRBMV9hdWRpb19kYXNoaW5pdC5tcDQVAgLIARIAKAAYABsCiAd1c2Vfb2lsATEScHJvZ3Jlc3NpdmVfcmVjaXBlATEVAAAmrofDw-CPsgUVAigCQzMsF0AiFP3ztkWiGBlkYXNoX2gyNjQtYmFzaWMtZ2VuMl83MjBwEQB1AGXIqwEA&_nc_gid=g8wD0S9qimloJDYIE8vhZg&_nc_zt=28&oh=00_AftglUzEWoEP0D6a_GEFNf8GlU97WbtLzR5zidjGwD7RaA&oe=69950E32
+
+--- Method 2: BS4 ---
+
+--- Method 3: JSON-LD ---
