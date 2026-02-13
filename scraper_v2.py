@@ -92,7 +92,13 @@ def extract_video_url(share_url):
                 unique_candidates = {c['url']: c for c in candidates}.values()
                 sorted_candidates = sorted(unique_candidates, key=lambda x: x['size'], reverse=True)
                 best_video = sorted_candidates[0]
-                print(f"[Method 1] Success! Selected primary video: {best_video['url'][:100]}... ({best_video['size'] / (1024*1024):.2f} MB)")
+                
+                size_mb = best_video['size'] / (1024*1024)
+                if best_video['size'] < MIN_SUBSTANTIAL_SIZE:
+                    print(f"[Method 1] Warning: Selected video is only {size_mb:.2f} MB (likely placeholder). Falling back...")
+                    raise Exception("Video too small, likely a placeholder")
+                
+                print(f"[Method 1] Success! Selected primary video: {best_video['url'][:100]}... ({size_mb:.2f} MB)")
                 return best_video['url']
             else:
                 print("[Method 1] Failed - no video URL found in yt-dlp extraction")
