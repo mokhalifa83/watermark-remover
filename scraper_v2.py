@@ -4,6 +4,9 @@ from bs4 import BeautifulSoup
 import re
 import json
 
+# Resilience Constants
+MIN_SUBSTANTIAL_SIZE = 1 * 1024 * 1024  # 1MB - Anything smaller is likely a placeholder/logo
+
 def extract_video_url(share_url):
     """
     Extracts the direct video URL from a Meta AI share link using multiple methods.

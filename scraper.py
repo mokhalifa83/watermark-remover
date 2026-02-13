@@ -4,6 +4,9 @@ from bs4 import BeautifulSoup
 import re
 import json
 
+# Resilience Constants
+MIN_SUBSTANTIAL_SIZE = 1 * 1024 * 1024  # 1MB - Anything smaller is likely a placeholder/logo
+
 def extract_video_url(share_url):
     """
     Extracts the direct video URL from a Meta AI share link using multiple methods.
@@ -85,11 +88,20 @@ def extract_video_url(share_url):
                 unique_candidates = {c['url']: c for c in candidates}.values()
                 sorted_candidates = sorted(unique_candidates, key=lambda x: x['size'], reverse=True)
                 best_video = sorted_candidates[0]
-                print(f"Selected primary video with size: {best_video['size'] / (1024*1024):.2f} MB")
+                
+                size_mb = best_video['size'] / (1024*1024)
+                if best_video['size'] < MIN_SUBSTANTIAL_SIZE:
+                    print(f"Warning: Selected video is only {size_mb:.2f} MB (potentially a placeholder). Trying fallback...")
+                    raise Exception("Video too small, likely a placeholder")
+                
+                print(f"Selected primary video with size: {size_mb:.2f} MB")
                 return best_video['url']
                 
     except Exception as e:
-        print(f"yt-dlp error: {e}")
+        if "likely a placeholder" in str(e):
+            print(f"yt-dlp found only a small video: {e}")
+        else:
+            print(f"yt-dlp error: {e}")
         pass  # Fall through to next method
     
     # Method 2: Direct HTML scraping with BeautifulSoup
