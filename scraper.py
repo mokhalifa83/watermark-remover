@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import re
 import json
 
-# Minimum file size to trust a video URL (avoid logos/placeholders)
+# Minimum file size to consider "real" — only enforced when size is KNOWN
 MIN_SUBSTANTIAL_SIZE = 1 * 1024 * 1024  # 1MB
 
 HEADERS = {
@@ -22,10 +22,10 @@ def extract_video_url(share_url: str) -> str:
     Returns the URL string on success, raises Exception on failure.
     """
 
-    # === METHOD 1: yt-dlp (most reliable — kept up-to-date against Meta changes) ===
+    # === METHOD 1: yt-dlp (most reliable) ===
     try:
         ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'bestvideo+bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
@@ -46,15 +46,24 @@ def extract_video_url(share_url: str) -> str:
                 url = entry.get('url')
                 if not url:
                     return
+
+                # Get size from yt-dlp metadata
                 size = entry.get('filesize') or entry.get('filesize_approx')
+
+                # If yt-dlp doesn't know the size, try a HEAD request.
+                # KEY FIX: If HEAD fails (Meta blocks Vercel's server IPs),
+                # size stays None — we treat None as "unknown" NOT "zero/bad".
+                # We NEVER reject a URL just because we couldn't determine its size.
                 if size is None:
                     try:
                         head = requests.head(url, allow_redirects=True, timeout=5, headers=HEADERS)
                         if head.status_code == 200:
-                            size = int(head.headers.get('Content-Length', 0))
+                            cl = int(head.headers.get('Content-Length', 0))
+                            size = cl if cl > 0 else None
                     except Exception:
-                        size = 0
-                candidates.append({'url': url, 'size': size or 0})
+                        size = None  # Unknown — benefit of the doubt
+
+                candidates.append({'url': url, 'size': size})
 
             # Only trust first entry to avoid random suggestions
             if 'entries' in info:
@@ -74,13 +83,20 @@ def extract_video_url(share_url: str) -> str:
                         add_candidate(fmt)
 
             if candidates:
-                unique = {c['url']: c for c in candidates}.values()
-                best = sorted(unique, key=lambda x: x['size'], reverse=True)[0]
+                # Only reject candidates where size is KNOWN to be tiny.
+                # Unknown size (None) = keep it — we can't check from Vercel's IPs.
+                valid = [c for c in candidates if c['size'] is None or c['size'] >= MIN_SUBSTANTIAL_SIZE]
 
-                if best['size'] < MIN_SUBSTANTIAL_SIZE:
-                    raise Exception(f"Video too small ({best['size']} bytes) — likely a placeholder")
+                if not valid:
+                    raise Exception("All candidates confirmed too small (likely placeholders)")
 
-                print(f"[yt-dlp] Found video: {best['size'] / 1024 / 1024:.2f} MB")
+                # Sort: known-large > unknown > known-small
+                def sort_key(c):
+                    return c['size'] if c['size'] is not None else MIN_SUBSTANTIAL_SIZE
+
+                best = sorted(valid, key=sort_key, reverse=True)[0]
+                size_str = f"{best['size'] / 1024 / 1024:.2f} MB" if best['size'] else "size unknown"
+                print(f"[yt-dlp] Found video URL ({size_str})")
                 return best['url']
 
             raise Exception("yt-dlp found no usable video candidates")
@@ -88,11 +104,11 @@ def extract_video_url(share_url: str) -> str:
     except Exception as e:
         print(f"[yt-dlp] Failed: {e}")
 
-    # === METHOD 2: HTML scraping — OpenGraph, video tags, JSON-LD, inline scripts ===
+    # === METHOD 2: HTML scraping fallback ===
     try:
         url = _scrape_video_url(share_url)
         if url:
-            print(f"[Scrape] Found video URL via HTML scraping")
+            print("[Scrape] Found video URL via HTML scraping")
             return url
     except Exception as e:
         print(f"[Scrape] Failed: {e}")
@@ -103,7 +119,7 @@ def extract_video_url(share_url: str) -> str:
     )
 
 
-def _scrape_video_url(share_url: str) -> str | None:
+def _scrape_video_url(share_url: str):
     """Fallback scraper using BeautifulSoup on the Meta AI page HTML."""
     session = requests.Session()
     response = session.get(share_url, headers=HEADERS, timeout=15)
@@ -154,7 +170,6 @@ def _scrape_video_url(share_url: str) -> str | None:
         for pattern in patterns:
             matches = re.findall(pattern, text)
             if matches:
-                # Decode unicode escapes (e.g. \u0026 → &)
                 return matches[0].encode().decode('unicode_escape')
 
     return None
