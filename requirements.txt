@@ -5,4 +5,3 @@ opencv-python-headless
 gunicorn
 python-dotenv
 flask-cors
-yt-dlp
