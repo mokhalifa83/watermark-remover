@@ -98,6 +98,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Clear video to stop playback
         const videoWrapper = resultContainer.querySelector('.video-wrapper');
         videoWrapper.innerHTML = '';
+
+        // Scroll back to the top
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
     });
 
 
