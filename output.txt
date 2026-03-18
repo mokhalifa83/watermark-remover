@@ -1,0 +1,45 @@
+[debug] Encodings: locale cp1252, fs utf-8, pref cp1252, out cp1252 (No ANSI), error cp1252 (No ANSI), screen cp1252 (No ANSI)
+[debug] yt-dlp version stable@2025.12.08 from yt-dlp/yt-dlp [7a52ff29d] (pip) API
+[debug] params: {'format': 'bestvideo+bestaudio/best', 'quiet': False, 'no_warnings': False, 'verbose': True, 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'referer': 'https://www.meta.ai/', 'nocheckcertificate': True, 'ignoreerrors': False, 'extract_flat': False, 'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8', 'Accept-Language': 'en-US,en;q=0.5', 'Sec-Fetch-Mode': 'navigate', 'Referer': 'https://www.meta.ai/'}, 'js_runtimes': {'deno': {}}, 'remote_components': set(), 'compat_opts': set()}
+[debug] Python 3.12.6 (CPython AMD64 64bit) - Windows-11-10.0.26200-SP0 (OpenSSL 3.0.15 3 Sep 2024)
+[debug] exe versions: none
+[debug] Optional libraries: certifi-2025.10.05, requests-2.32.5, sqlite3-3.45.3, urllib3-2.5.0
+[debug] JS runtimes: none
+[debug] Proxy map: {}
+[debug] Request Handlers: urllib, requests
+[debug] Plugin directories: none
+[debug] Loaded 1854 extractors
+[generic] Extracting URL: https://www.meta.ai/@tonz1959/post/OY6KfFbJ9iU/
+Testing URL: https://www.meta.ai/@tonz1959/post/OY6KfFbJ9iU/
+[Method 1] Trying yt-dlp extraction for: https://www.meta.ai/@tonz1959/post/OY6KfFbJ9iU/
+[generic] OY6KfFbJ9iU: Downloading webpage
+WARNING: [generic] Falling back on generic information extractor
+[generic] OY6KfFbJ9iU: Extracting information
+[debug] Looking for embeds
+[debug] Identified a JW Player JS loader
+[download] Downloading playlist: @tonz1959
+[debug] The information of all playlist entries will be held in memory
+[generic] Playlist @tonz1959: Downloading 7 items of 7
+[download] Downloading item 1 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 2 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 3 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 4 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 5 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 6 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Downloading item 7 of 7
+[debug] Formats sorted by: hasvid, ie_pref, lang, quality, res, fps, hdr:12(7), vcodec, channels, acodec, size, br, asr, proto, vext, aext, hasaud, source, id
+[download] Finished downloading playlist: @tonz1959
+[Method 1] Success! Found video URL: https://video.farn2-2.fna.fbcdn.net/o1/v/t2/f2/m412/AQPkAZREj4_ENcvSIJ7Y3npT1p1DCgG3mFiRgrxG5pnJh37C...
+
+Extracted URL: https://video.farn2-2.fna.fbcdn.net/o1/v/t2/f2/m412/AQPkAZREj4_ENcvSIJ7Y3npT1p1DCgG3mFiRgrxG5pnJh37CTdwx1vobUksgbeetWMA09Sc6q7eJL07qDZy00-saI2THAwNAXlyFFKQ.mp4?_nc_cat=105&_nc_oc=AdnJXbS8micBrwTGU-yic4vFvbv6teRv6NRIgQmu8zyUayW3pCiljOGbfl6ZJdJloe-7K8vbCuig8yfMRvVnbZfM&_nc_sid=5e9851&_nc_ht=video.farn2-2.fna.fbcdn.net&_nc_ohc=fXwBwxxumlkQ7kNvwHSGU6D&efg=eyJ2ZW5jb2RlX3RhZyI6Inhwdl9wcm9ncmVzc2l2ZS5WSV9VU0VDQVNFX1BST0RVQ1RfVFlQRS4uQzMuNDY0LmRhc2hfaDI2NC1iYXNpYy1nZW4yXzcyMHAiLCJ4cHZfYXNzZXRfaWQiOjE1MTc1OTY3MDAwNzQ0NTUsImFzc2V0X2FnZV9kYXlzIjoxOCwidmlfdXNlY2FzZV9pZCI6MTA5ODAsImR1cmF0aW9uX3MiOjksInVybGdlbl9zb3VyY2UiOiJ3d3cifQ%3D%3D&ccb=17-1&vs=5a402bfc2d190b34&_nc_vs=HBksFQIYQGZiX3Blcm1hbmVudC9ERDQ5M0MyRjdCMzI1ODE5NEI2ODMyQ0MzQjUxMDdBQV92aWRlb19kYXNoaW5pdC5tcDQVAALIARIAFQIYQGZiX3Blcm1hbmVudC9DNTREMEI4QzAxQzNBMTMwNDIxMDBEMEJCNTMxODRBMV9hdWRpb19kYXNoaW5pdC5tcDQVAgLIARIAKAAYABsCiAd1c2Vfb2lsATEScHJvZ3Jlc3NpdmVfcmVjaXBlATEVAAAmrofDw-CPsgUVAigCQzMsF0AiFP3ztkWiGBlkYXNoX2gyNjQtYmFzaWMtZ2VuMl83MjBwEQB1AGXIqwEA&_nc_gid=Ptj39YS5KLMrn0kqabhT9Q&_nc_zt=28&oh=00_AfsrXE6V1a3pkCzFpyvwvpvn2yIMiFVKHZpJQrsxclWq_w&oe=69950E32
+Status Code: 200
+Content-Type: video/mp4
+Content-Length: 2275023
+Size: 2.17 MB
+Video seems substantial.

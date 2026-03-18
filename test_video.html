@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+            font-size: 16px;
+        }
+        button {
+            background: #e50914;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #f40612;
+        }
+        #result {
+            margin-top: 30px;
+        }
+        video {
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success {
+            background: #155724;
+            border: 1px solid #28a745;
+        }
+        .error {
+            background: #721c24;
+            border: 1px solid #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Meta AI Video Extractor Test</h1>
+        <p>Test the video extraction functionality</p>
+        
+        <input type="text" id="urlInput" placeholder="Enter Meta AI video URL" value="https://www.meta.ai/@tonz1959/post/OY6KfFbJ9iU/">
+        <button onclick="testExtraction()">Extract Video</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testExtraction() {
+            const url = document.getElementById('urlInput').value;
+            const resultDiv = document.getElementById('result');
+            
+            resultDiv.innerHTML = '<div class="status">⏳ Extracting video URL...</div>';
+            
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/remove-watermark', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to extract video');
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="status success">✅ Video extracted successfully!</div>
+                    <p><strong>Video URL:</strong><br>${data.video_url}</p>
+                    <video controls autoplay>
+                        <source src="${data.video_url}" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">❌ Error: ${error.message}</div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
