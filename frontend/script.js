@@ -31,30 +31,19 @@ document.addEventListener('DOMContentLoaded', () => {
         setLoading(true);
 
         try {
-            // The server extracts the URL AND streams the video back in one shot.
-            // We receive raw video bytes — Meta's CDN URL is used server-side only,
-            // never exposed to the browser, and consumed before it can expire.
             const response = await fetch(`${API_CONFIG.BASE_URL}/api/remove-watermark`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url }),
             });
 
+            const data = await response.json();
+
             if (!response.ok) {
-                // Try to parse error JSON
-                let errMsg = 'Failed to process video';
-                try {
-                    const errData = await response.json();
-                    errMsg = errData.error || errMsg;
-                } catch (_) {}
-                throw new Error(errMsg);
+                throw new Error(data.error || 'Failed to process video');
             }
 
-            // Convert the streamed bytes into a local Blob URL
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-
-            showResult(blobUrl);
+            showResult(data.video_url);
 
         } catch (error) {
             showError(error.message);
@@ -84,18 +73,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function showResult(blobUrl) {
+    function showResult(videoUrl) {
         resultContainer.classList.remove('hidden');
         urlInput.parentElement.classList.add('hidden');
 
-        // blob: URL lives in the browser's memory — completely independent of Meta's CDN
-        downloadBtn.href = blobUrl;
-        downloadBtn.setAttribute('download', 'meta_ai_video_no_watermark.mp4');
+        const proxyUrl = `${API_CONFIG.BASE_URL}/api/proxy-download?url=${encodeURIComponent(videoUrl)}&filename=video_no_watermark.mp4`;
+        downloadBtn.href = proxyUrl;
+        downloadBtn.setAttribute('download', 'video_no_watermark.mp4');
 
         const videoWrapper = resultContainer.querySelector('.video-wrapper');
         videoWrapper.innerHTML = `
             <video controls width="100%" style="border-radius: 8px;" autoplay>
-                <source src="${blobUrl}" type="video/mp4">
+                <source src="${proxyUrl}" type="video/mp4">
                 Your browser does not support the video tag.
             </video>
         `;
