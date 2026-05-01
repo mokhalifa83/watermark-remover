@@ -43,59 +43,61 @@ def is_progressive(url_str: str) -> bool:
         return False
 
 
-def check_url_size(u: str) -> tuple[str, int]:
-    try:
-        h = requests.head(u, timeout=5, headers=HEADERS)
-        return u, int(h.headers.get('Content-Length', 0))
-    except Exception:
-        return u, 0
+from bs4 import BeautifulSoup
 
 def extract_video_url(share_url: str) -> str:
     """
     Fetches the Meta AI post page and extracts the direct .mp4 CDN URL.
-    We prioritize 'progressive' streams and then fetch the largest file size
-    to ensure we get the main video and not a random 5s recommended video.
+    By parsing the script tags in DOM order, we guarantee the first match
+    is the main post video, avoiding recommended 5s videos.
     """
     response = requests.get(share_url, headers=HEADERS, timeout=15)
     response.raise_for_status()
-    text = response.text
+    
+    soup = BeautifulSoup(response.text, 'html.parser')
+    scripts = soup.find_all('script')
+    
+    for script in scripts:
+        if script.string:
+            patterns = [
+                r'"(https?://[^"]+\.mp4[^"]*)"',
+                r"'(https?://[^']+\.mp4[^']*)'",
+                r'"videoUrl":\s*"([^"]+)"',
+                r'"video_url":\s*"([^"]+)"',
+                r'"url":\s*"(https?://[^"]+\.mp4[^"]*)"'
+            ]
+            for pattern in patterns:
+                matches = re.findall(pattern, script.string)
+                if matches:
+                    u = matches[0]
+                    u = u.replace('\\\\', '\\').replace('\\/', '/')
+                    idx = u.find(r'\u003c')
+                    if idx != -1: 
+                        u = u[:idx]
+                    return u.replace(r'\u0026', '&')
 
-    # Meta AI embeds direct fbcdn.net .mp4 URLs in the page HTML inside JSON blobs.
-    raw_urls = re.findall(r'https://video-[^\s"\'<>]+', text)
+    # Fallback to general regex if script tags don't have it
+    raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', response.text)
     if not raw_urls:
-        raw_urls = re.findall(r'https://[^\s"\'<>]+fbcdn\.net[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
-
+        raw_urls = re.findall(r'https://[^\s"\'<>]+fbcdn\.net[^\s"\'<>]+\.mp4[^\s"\'<>]*', response.text)
+        
     if not raw_urls:
         raise Exception(
             "Could not find a video in this Meta AI link. "
             "Make sure it is a direct video post URL (not an image or text post)."
         )
 
-    # Clean all found URLs
-    cleaned_urls = list(set([unescape_url(u) for u in raw_urls]))
-    
-    # 1. Filter out only progressive URLs
+    # Order-preserving deduplication
+    seen = set()
+    cleaned_urls = []
+    for u in raw_urls:
+        cu = unescape_url(u)
+        if cu not in seen:
+            seen.add(cu)
+            cleaned_urls.append(cu)
+            
     prog_urls = [u for u in cleaned_urls if is_progressive(u)]
-    if not prog_urls:
-        prog_urls = cleaned_urls
-
-    # 2. To avoid random 5-second suggested videos, we need to find the main video.
-    # The main video is usually the largest one. We use ThreadPoolExecutor to check sizes concurrently.
-    import concurrent.futures
-
-    best_url = None
-    max_size = -1
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(check_url_size, u): u for u in prog_urls}
-        for future in concurrent.futures.as_completed(futures):
-            u, size = future.result()
-            if size > max_size:
-                max_size = size
-                best_url = u
-
-    if best_url:
-        return best_url
-
-    # Fallback: just return the first one found
-    return prog_urls[0]
+    if prog_urls:
+        return prog_urls[0]
+        
+    return cleaned_urls[0]
