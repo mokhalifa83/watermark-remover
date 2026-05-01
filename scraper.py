@@ -74,7 +74,10 @@ def extract_video_url(share_url: str) -> str:
                     idx = u.find(r'\u003c')
                     if idx != -1: 
                         u = u[:idx]
-                    return u.replace(r'\u0026', '&')
+                    u = u.replace(r'\u0026', '&')
+                    if u.endswith('\\'):
+                        u = u[:-1]
+                    return u
 
     # Fallback to general regex if script tags don't have it
     raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', response.text)
