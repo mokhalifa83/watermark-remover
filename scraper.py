@@ -52,7 +52,7 @@ def _clean_video_url(u: str) -> str:
     idx = u.find(r'\u003c')
     if idx != -1:
         u = u[:idx]
-    # Strip trailing backslashes or Next.js chunk separators
+    # Strip trailing backslashes or Next.js chunk separators like "a1:Tde0,"
     u = re.sub(r'[a-z0-9]+:T[a-z0-9]+,.*$', '', u)
     u = u.rstrip('\\')
     return u
@@ -78,40 +78,49 @@ def extract_video_url(share_url: str) -> str:
         raise Exception("Could not extract post ID from URL.")
     post_id = post_id_match.group(1)
 
-    # 2. Parse Next.js data chunks to find the reference ID for this post's video
+    # 2. Parse ALL Next.js data chunks (json.loads decodes \u0026 → & automatically)
+    parsed_chunks = []
     chunks = re.findall(r'self\.__next_f\.push\((.*?)\)</script>', text)
-    ref_id = None
     for chunk in chunks:
         try:
             data = json.loads(chunk)
             if isinstance(data, list) and len(data) == 2 and isinstance(data[1], str):
-                chunk_str = data[1]
-                if post_id in chunk_str:
-                    idx = chunk_str.find(post_id)
-                    sub = chunk_str[max(0, idx - 10):idx + 1500]
-                    url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
-                    if url_match:
-                        ref_id = url_match.group(1)
-                        break
+                parsed_chunks.append(data[1])
         except Exception:
             pass
 
-    # 3. Resolve the reference ID to the actual video URL
+    # 3. Find the reference ID for this post's video URL
+    ref_id = None
+    for chunk_str in parsed_chunks:
+        if post_id in chunk_str:
+            idx = chunk_str.find(post_id)
+            sub = chunk_str[max(0, idx - 10):idx + 1500]
+            url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
+            if url_match:
+                ref_id = url_match.group(1)
+                break
+
+    # 4. Resolve the reference ID to the actual video URL
+    #    Search PARSED chunks where \u0026 is already decoded to &
     if ref_id:
-        # The ref_id definition looks like `72:T400,https://...mp4?...`
-        idx = text.find(f'{ref_id}:T')
-        if idx == -1:
-            idx = text.find(f'{ref_id}:"')
-        if idx == -1:
-            idx = text.find(f'{ref_id}:\\"')
+        for chunk_str in parsed_chunks:
+            # Look for patterns like `72:T400,https://...` or `72:"https://...`
+            if f'{ref_id}:T' in chunk_str or f'{ref_id}:"' in chunk_str:
+                idx = chunk_str.find(f'{ref_id}:T')
+                if idx == -1:
+                    idx = chunk_str.find(f'{ref_id}:"')
+                if idx != -1:
+                    sub = chunk_str[idx:idx + 3000]
+                    # In parsed chunks, & is literal so we can use a simpler regex
+                    mp4_match = re.search(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', sub)
+                    if mp4_match:
+                        u = mp4_match.group(1)
+                        # Strip any trailing Next.js chunk separator
+                        u = re.sub(r'[a-z0-9]+:T[a-z0-9]+,.*$', '', u)
+                        u = u.rstrip('\\')
+                        return u
 
-        if idx != -1:
-            sub = text[idx:idx + 2000]
-            mp4_match = re.search(r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)', sub)
-            if mp4_match:
-                return _clean_video_url(mp4_match.group(1))
-
-    # 4. Fallback: scan all URLs and pick the best one by file size
+    # 5. Fallback: scan all URLs and pick the best one by file size
     raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
     if not raw_urls:
         raw_urls = re.findall(r'https://[^\s"\'<>]+fbcdn\.net[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
