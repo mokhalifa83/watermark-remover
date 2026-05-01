@@ -43,10 +43,18 @@ def is_progressive(url_str: str) -> bool:
         return False
 
 
+def check_url_size(u: str) -> tuple[str, int]:
+    try:
+        h = requests.head(u, timeout=5, headers=HEADERS)
+        return u, int(h.headers.get('Content-Length', 0))
+    except Exception:
+        return u, 0
+
 def extract_video_url(share_url: str) -> str:
     """
     Fetches the Meta AI post page and extracts the direct .mp4 CDN URL.
-    We prioritize 'progressive' streams to ensure audio is included.
+    We prioritize 'progressive' streams and then fetch the largest file size
+    to ensure we get the main video and not a random 5s recommended video.
     """
     response = requests.get(share_url, headers=HEADERS, timeout=15)
     response.raise_for_status()
@@ -64,12 +72,30 @@ def extract_video_url(share_url: str) -> str:
         )
 
     # Clean all found URLs
-    cleaned_urls = [unescape_url(u) for u in set(raw_urls)]
+    cleaned_urls = list(set([unescape_url(u) for u in raw_urls]))
     
-    # 1. Try to find a progressive URL (has sound + video)
-    for u in cleaned_urls:
-        if is_progressive(u):
-            return u
+    # 1. Filter out only progressive URLs
+    prog_urls = [u for u in cleaned_urls if is_progressive(u)]
+    if not prog_urls:
+        prog_urls = cleaned_urls
 
-    # 2. Fallback: just return the first one found
-    return cleaned_urls[0]
+    # 2. To avoid random 5-second suggested videos, we need to find the main video.
+    # The main video is usually the largest one. We use ThreadPoolExecutor to check sizes concurrently.
+    import concurrent.futures
+
+    best_url = None
+    max_size = -1
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(check_url_size, u): u for u in prog_urls}
+        for future in concurrent.futures.as_completed(futures):
+            u, size = future.result()
+            if size > max_size:
+                max_size = size
+                best_url = u
+
+    if best_url:
+        return best_url
+
+    # Fallback: just return the first one found
+    return prog_urls[0]
