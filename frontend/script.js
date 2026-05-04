@@ -83,8 +83,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const videoWrapper = resultContainer.querySelector('.video-wrapper');
         videoWrapper.innerHTML = `
-            <video controls width="100%" style="border-radius: 8px;" autoplay>
-                <source src="${proxyUrl}" type="video/mp4">
+            <video controls width="100%" style="border-radius: 8px; background: #000;" autoplay
+                src="${proxyUrl}" 
+                onerror="this.parentElement.innerHTML += '<p style=\'color: #ff4d4d; margin-top: 10px;\'>Error loading video player. The link may have expired. Please try again.</p>'">
                 Your browser does not support the video tag.
             </video>
         `;
