@@ -1,187 +1,152 @@
-import yt_dlp
 import requests
-from bs4 import BeautifulSoup
 import re
+import base64
+import urllib.parse
 import json
+import concurrent.futures
 
-# Resilience Constants
-MIN_SUBSTANTIAL_SIZE = 1 * 1024 * 1024  # 1MB - Anything smaller is likely a placeholder/logo
+HEADERS = {
+    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+}
 
-def extract_video_url(share_url):
+
+def unescape_url(url_str: str) -> str:
+    if url_str.endswith('\\'):
+        url_str = url_str[:-1]
+    idx = url_str.find(r'\u003c')
+    if idx != -1:
+        url_str = url_str[:idx]
+    url_str = url_str.replace(r'\u0026', '&')
+    url_str = url_str.replace(r'\/', '/')
+    url_str = url_str.replace('&amp;', '&')
+    return url_str
+
+
+def is_progressive(url_str: str) -> bool:
     """
-    Extracts the direct video URL from a Meta AI share link using multiple methods.
+    Checks if the URL is a progressive stream (contains both audio and video)
+    by decoding the 'efg' parameter from the Facebook CDN URL.
     """
-    
-    # Method 1: Try yt-dlp with enhanced options
+    match = re.search(r'efg=([^&]+)', url_str)
+    if not match:
+        return False
+    efg = urllib.parse.unquote(match.group(1))
     try:
-        ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'referer': 'https://www.meta.ai/',
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'extract_flat': False,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Referer': 'https://www.meta.ai/',
-            }
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(share_url, download=False)
-            
-            if not info_dict:
-                raise Exception("yt-dlp returned empty info_dict")
+        pad = len(efg) % 4
+        if pad:
+            efg += '=' * (4 - pad)
+        dec = base64.b64decode(efg).decode('utf-8', errors='ignore')
+        return 'progressive' in dec.lower()
+    except Exception:
+        return False
 
-            candidates = []
 
-            # Helper to add candidate
-            def add_candidate(entry):
-                url = entry.get('url')
-                if url:
-                    # Try to get size from metadata first
-                    size = entry.get('filesize') or entry.get('filesize_approx')
-                    if size is None:
-                        # Fallback to HEAD request
-                        try:
-                            head = requests.head(url, allow_redirects=True, timeout=5)
-                            if head.status_code == 200:
-                                size = int(head.headers.get('Content-Length', 0))
-                        except:
-                            pass
-                    
-                    if size is not None:
-                        candidates.append({'url': url, 'size': size})
+def extract_video_url(share_url: str) -> str:
+    """
+    Fetches the Meta AI post page and extracts the direct .mp4 CDN URL.
 
-            # 1. Process entries - ONLY trust the first one to avoid random suggestions
-            if 'entries' in info_dict:
-                entries = list(info_dict['entries'])
-                if entries:
-                    # The first entry is the actual post video
-                    primary_entry = entries[0]
-                    add_candidate(primary_entry)
-                    
-                    # If the primary entry has its own formats, add them too
-                    formats = primary_entry.get('formats', [])
-                    for f in formats:
-                        if f.get('url'):
-                            add_candidate(f)
-                else:
-                    add_candidate(info_dict)
-            else:
-                add_candidate(info_dict)
+    Strategy: Meta AI uses Next.js server-side rendering. The post's video URL
+    is stored as a reference (e.g. "$73") in the post data, and the actual URL
+    is defined in a separate data chunk. We trace post_id -> ref_id -> video URL
+    to guarantee we get the exact video for the requested post, not a random
+    recommended clip.
 
-            # 2. Check formats in top-level if still no candidates
-            if not candidates and 'formats' in info_dict:
-                 formats = info_dict.get('formats', [])
-                 for f in formats:
-                     if f.get('url'):
-                         add_candidate(f)
+    Falls back to picking the largest progressive video if reference tracing fails.
+    """
+    response = requests.get(share_url, headers=HEADERS, timeout=15)
+    response.raise_for_status()
+    text = response.text
 
-            # Select the largest video from our validated candidates (all matching the primary content)
-            if candidates:
-                # Remove duplicates and sort by size
-                unique_candidates = {c['url']: c for c in candidates}.values()
-                sorted_candidates = sorted(unique_candidates, key=lambda x: x['size'], reverse=True)
-                best_video = sorted_candidates[0]
-                
-                if best_video['size'] < MIN_SUBSTANTIAL_SIZE:
-                    raise Exception("Video too small, likely a placeholder")
-                    
-                return best_video['url']
-                
-    except Exception as e:
-        pass  # Fall through to next method
-    
-    # Method 2: Direct HTML scraping with BeautifulSoup
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.meta.ai/'
-        }
-        
-        session = requests.Session()
-        response = session.get(share_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Check OpenGraph video tags
-            og_video = soup.find("meta", property="og:video")
-            if og_video and og_video.get('content'):
-                return og_video['content']
-                
-            og_video_secure = soup.find("meta", property="og:video:secure_url")
-            if og_video_secure and og_video_secure.get('content'):
-                return og_video_secure['content']
-            
-            # Check for video tags
-            video_tag = soup.find("video")
-            if video_tag:
-                src = video_tag.get("src")
-                if src:
-                    return src
-                sources = video_tag.find_all("source")
-                for source in sources:
-                    src = source.get('src')
-                    if src:
-                        return src
-            
-            # Look for video URLs in script tags
-            scripts = soup.find_all("script")
-            for script in scripts:
-                if script.string:
-                    # Look for common video URL patterns
-                    patterns = [
-                        r'"(https?://[^"]+\.mp4[^"]*)"',
-                        r"'(https?://[^']+\.mp4[^']*)'",
-                        r'"videoUrl":\s*"([^"]+)"',
-                        r'"video_url":\s*"([^"]+)"',
-                        r'"url":\s*"(https?://[^"]+\.mp4[^"]*)"'
-                    ]
-                    
-                    for pattern in patterns:
-                        matches = re.findall(pattern, script.string)
-                        if matches:
-                            return matches[0]
-        
-    except Exception as e:
-        pass  # Fall through to next method
-    
-    # Method 3: Try to extract from JSON-LD or structured data
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Referer': 'https://www.meta.ai/'
-        }
-        response = requests.get(share_url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        json_ld_scripts = soup.find_all('script', type='application/ld+json')
-        for script in json_ld_scripts:
-            try:
-                data = json.loads(script.string)
-                # Look for video content URL
-                if isinstance(data, dict):
-                    if 'contentUrl' in data:
-                        return data['contentUrl']
-                    if 'video' in data and isinstance(data['video'], dict):
-                        if 'contentUrl' in data['video']:
-                            return data['video']['contentUrl']
-            except json.JSONDecodeError:
-                continue
-        
-    except Exception as e:
-        pass
-    
-    # If all methods fail
-    raise Exception("Failed to extract video URL using all available methods. Meta AI may have changed their video structure or the URL may be invalid.")
+    # 1. Extract Post ID from the share URL
+    post_id_match = re.search(r'/post/([^/?]+)', share_url)
+    if not post_id_match:
+        raise Exception("Could not extract post ID from URL.")
+    post_id = post_id_match.group(1)
 
+    # 2. Parse ALL Next.js data chunks (json.loads decodes \u0026 -> & automatically)
+    parsed_chunks = []
+    chunks = re.findall(r'self\.__next_f\.push\((.*?)\)</script>', text)
+    for chunk in chunks:
+        try:
+            data = json.loads(chunk)
+            if isinstance(data, list) and len(data) == 2 and isinstance(data[1], str):
+                parsed_chunks.append(data[1])
+        except Exception:
+            pass
+
+    # 3. Find the reference ID for this post's video URL
+    ref_id = None
+    for chunk_str in parsed_chunks:
+        if post_id in chunk_str:
+            idx = chunk_str.find(post_id)
+            sub = chunk_str[max(0, idx - 10):idx + 1500]
+            url_match = re.search(r'\\?"url\\?":\\?"\\$([^"$\\]+)\\?"', sub)
+            if url_match:
+                ref_id = url_match.group(1)
+                break
+
+    # 4. Resolve the reference ID to the actual video URL
+    #    Search PARSED chunks where \u0026 is already decoded to &
+    if ref_id:
+        for chunk_str in parsed_chunks:
+            if f'{ref_id}:T' in chunk_str or f'{ref_id}:"' in chunk_str:
+                idx = chunk_str.find(f'{ref_id}:T')
+                if idx == -1:
+                    idx = chunk_str.find(f'{ref_id}:"')
+                if idx != -1:
+                    sub = chunk_str[idx:idx + 3000]
+                    mp4_match = re.search(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', sub)
+                    if mp4_match:
+                        u = mp4_match.group(1)
+                        # Strip any trailing Next.js chunk separator
+                        u = re.sub(r'[a-z0-9]+:T[a-z0-9]+,.*$', '', u)
+                        u = u.rstrip('\\')
+                        return u
+
+    # 5. Fallback: scan all URLs in parsed chunks (& already decoded) and pick
+    #    the largest progressive one to avoid random 5-second thumbnails.
+    fallback_urls = []
+    for chunk_str in parsed_chunks:
+        matches = re.findall(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', chunk_str)
+        fallback_urls.extend(matches)
+
+    # Also scan raw HTML as a last resort
+    if not fallback_urls:
+        raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
+        fallback_urls = [unescape_url(u) for u in raw_urls]
+
+    if not fallback_urls:
+        raise Exception(
+            "Could not find a video in this Meta AI link. "
+            "Make sure it is a direct video post URL (not an image or text post)."
+        )
+
+    # Order-preserving deduplication
+    seen = set()
+    cleaned_urls = []
+    for u in fallback_urls:
+        if u not in seen:
+            seen.add(u)
+            cleaned_urls.append(u)
+
+    prog_urls = [u for u in cleaned_urls if is_progressive(u)]
+    if not prog_urls:
+        prog_urls = cleaned_urls
+
+    def _check_size(url):
+        try:
+            h = requests.head(url, timeout=5, headers=HEADERS)
+            return url, int(h.headers.get('Content-Length', 0))
+        except Exception:
+            return url, 0
+
+    best_url, best_size = prog_urls[0], 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        for url, size in executor.map(lambda u: _check_size(u), prog_urls):
+            if size > best_size:
+                best_size = size
+                best_url = url
+
+    return best_url

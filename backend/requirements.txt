@@ -1,8 +1,6 @@
 Flask
 requests
 beautifulsoup4
-opencv-python-headless
 gunicorn
 python-dotenv
 flask-cors
-yt-dlp
