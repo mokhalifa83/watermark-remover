@@ -31,15 +31,35 @@ def remove_watermark():
 def proxy_download():
     url = request.args.get('url')
     filename = request.args.get('filename', 'video.mp4')
-    
+
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
-        req = requests.get(url, stream=True)
-        return Response(stream_with_context(req.iter_content(chunk_size=1024)),
-                        content_type=req.headers['content-type'],
-                        headers={'Content-Disposition': f'attachment; filename={filename}'})
+        cdn_headers = {
+            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+            'Referer': 'https://www.meta.ai/',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        req = requests.get(url, stream=True, headers=cdn_headers, timeout=30)
+        if req.status_code == 403:
+            return jsonify({'error': 'Video URL expired. Please try again with a fresh link.'}), 410
+
+        content_type = req.headers.get('content-type', 'video/mp4')
+        response_headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Access-Control-Allow-Origin': '*',
+        }
+        content_length = req.headers.get('Content-Length')
+        if content_length:
+            response_headers['Content-Length'] = content_length
+
+        return Response(
+            stream_with_context(req.iter_content(chunk_size=8192)),
+            content_type=content_type,
+            headers=response_headers,
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
