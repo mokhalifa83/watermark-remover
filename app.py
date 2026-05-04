@@ -41,15 +41,31 @@ def proxy_download():
         return jsonify({'error': 'No URL provided'}), 400
 
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        cdn_headers = {
+            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
             'Referer': 'https://www.meta.ai/',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
-        req = requests.get(url, stream=True, headers=headers, timeout=60)
+        req = requests.get(url, stream=True, headers=cdn_headers, timeout=30)
+        
+        if req.status_code == 403:
+            return jsonify({'error': 'Video URL access denied by Meta CDN. Try refreshing.'}), 403
+
+        content_type = req.headers.get('content-type', 'video/mp4')
+        response_headers = {
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Access-Control-Allow-Origin': '*',
+        }
+        
+        content_length = req.headers.get('Content-Length')
+        if content_length:
+            response_headers['Content-Length'] = content_length
+
         return Response(
-            stream_with_context(req.iter_content(chunk_size=1024 * 256)),
-            content_type=req.headers.get('content-type', 'video/mp4'),
-            headers={'Content-Disposition': f'attachment; filename={filename}'}
+            stream_with_context(req.iter_content(chunk_size=8192)),
+            content_type=content_type,
+            headers=response_headers
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

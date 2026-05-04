@@ -2,6 +2,8 @@ import requests
 import re
 import base64
 import urllib.parse
+import json
+import concurrent.futures
 
 HEADERS = {
     'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
@@ -16,7 +18,6 @@ def unescape_url(url_str: str) -> str:
     idx = url_str.find(r'\u003c')
     if idx != -1:
         url_str = url_str[:idx]
-    
     url_str = url_str.replace(r'\u0026', '&')
     url_str = url_str.replace(r'\/', '/')
     url_str = url_str.replace('&amp;', '&')
@@ -31,7 +32,6 @@ def is_progressive(url_str: str) -> bool:
     match = re.search(r'efg=([^&]+)', url_str)
     if not match:
         return False
-        
     efg = urllib.parse.unquote(match.group(1))
     try:
         pad = len(efg) % 4
@@ -43,30 +43,17 @@ def is_progressive(url_str: str) -> bool:
         return False
 
 
-import json
-
-
-def _clean_video_url(u: str) -> str:
-    """Clean up a raw video URL extracted from Meta's page source."""
-    u = u.replace(r'\u0026', '&').replace('\\/', '/').replace('\\\\', '\\')
-    idx = u.find(r'\u003c')
-    if idx != -1:
-        u = u[:idx]
-    # Strip trailing backslashes or Next.js chunk separators like "a1:Tde0,"
-    u = re.sub(r'[a-z0-9]+:T[a-z0-9]+,.*$', '', u)
-    u = u.rstrip('\\')
-    return u
-
-
 def extract_video_url(share_url: str) -> str:
     """
     Fetches the Meta AI post page and extracts the direct .mp4 CDN URL.
 
     Strategy: Meta AI uses Next.js server-side rendering. The post's video URL
     is stored as a reference (e.g. "$73") in the post data, and the actual URL
-    is defined in a separate data chunk. We trace post_id → ref_id → video URL
+    is defined in a separate data chunk. We trace post_id -> ref_id -> video URL
     to guarantee we get the exact video for the requested post, not a random
     recommended clip.
+
+    Falls back to picking the largest progressive video if reference tracing fails.
     """
     response = requests.get(share_url, headers=HEADERS, timeout=15)
     response.raise_for_status()
@@ -78,7 +65,7 @@ def extract_video_url(share_url: str) -> str:
         raise Exception("Could not extract post ID from URL.")
     post_id = post_id_match.group(1)
 
-    # 2. Parse ALL Next.js data chunks (json.loads decodes \u0026 → & automatically)
+    # 2. Parse ALL Next.js data chunks (json.loads decodes \u0026 -> & automatically)
     parsed_chunks = []
     chunks = re.findall(r'self\.__next_f\.push\((.*?)\)</script>', text)
     for chunk in chunks:
@@ -95,7 +82,7 @@ def extract_video_url(share_url: str) -> str:
         if post_id in chunk_str:
             idx = chunk_str.find(post_id)
             sub = chunk_str[max(0, idx - 10):idx + 1500]
-            url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
+            url_match = re.search(r'\\?"url\\?":\\?"\\$([^"$\\]+)\\?"', sub)
             if url_match:
                 ref_id = url_match.group(1)
                 break
@@ -104,14 +91,12 @@ def extract_video_url(share_url: str) -> str:
     #    Search PARSED chunks where \u0026 is already decoded to &
     if ref_id:
         for chunk_str in parsed_chunks:
-            # Look for patterns like `72:T400,https://...` or `72:"https://...`
             if f'{ref_id}:T' in chunk_str or f'{ref_id}:"' in chunk_str:
                 idx = chunk_str.find(f'{ref_id}:T')
                 if idx == -1:
                     idx = chunk_str.find(f'{ref_id}:"')
                 if idx != -1:
                     sub = chunk_str[idx:idx + 3000]
-                    # In parsed chunks, & is literal so we can use a simpler regex
                     mp4_match = re.search(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', sub)
                     if mp4_match:
                         u = mp4_match.group(1)
@@ -120,12 +105,19 @@ def extract_video_url(share_url: str) -> str:
                         u = u.rstrip('\\')
                         return u
 
-    # 5. Fallback: scan all URLs and pick the best one by file size
-    raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
-    if not raw_urls:
-        raw_urls = re.findall(r'https://[^\s"\'<>]+fbcdn\.net[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
+    # 5. Fallback: scan all URLs in parsed chunks (& already decoded) and pick
+    #    the largest progressive one to avoid random 5-second thumbnails.
+    fallback_urls = []
+    for chunk_str in parsed_chunks:
+        matches = re.findall(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', chunk_str)
+        fallback_urls.extend(matches)
 
-    if not raw_urls:
+    # Also scan raw HTML as a last resort
+    if not fallback_urls:
+        raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
+        fallback_urls = [unescape_url(u) for u in raw_urls]
+
+    if not fallback_urls:
         raise Exception(
             "Could not find a video in this Meta AI link. "
             "Make sure it is a direct video post URL (not an image or text post)."
@@ -134,18 +126,14 @@ def extract_video_url(share_url: str) -> str:
     # Order-preserving deduplication
     seen = set()
     cleaned_urls = []
-    for u in raw_urls:
-        cu = unescape_url(u)
-        if cu not in seen:
-            seen.add(cu)
-            cleaned_urls.append(cu)
+    for u in fallback_urls:
+        if u not in seen:
+            seen.add(u)
+            cleaned_urls.append(u)
 
     prog_urls = [u for u in cleaned_urls if is_progressive(u)]
     if not prog_urls:
         prog_urls = cleaned_urls
-
-    # Pick the largest file to avoid 5-second thumbnails
-    import concurrent.futures
 
     def _check_size(url):
         try:
