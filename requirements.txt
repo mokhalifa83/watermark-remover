@@ -5,5 +5,3 @@ opencv-python-headless
 gunicorn
 python-dotenv
 flask-cors
-playwright
-playwright-stealth
