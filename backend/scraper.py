@@ -6,9 +6,19 @@ import json
 import concurrent.futures
 
 HEADERS = {
-    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
 }
 
 
@@ -55,17 +65,37 @@ def extract_video_url(share_url: str) -> str:
 
     Falls back to picking the largest progressive video if reference tracing fails.
     """
-    response = requests.get(share_url, headers=HEADERS, timeout=15)
-    response.raise_for_status()
-    text = response.text
+    # Try with a few different headers if blocked
+    ua_list = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    ]
+    
+    text = ""
+    for ua in ua_list:
+        try:
+            current_headers = HEADERS.copy()
+            current_headers['User-Agent'] = ua
+            response = requests.get(share_url, headers=current_headers, timeout=15)
+            response.raise_for_status()
+            text = response.text
+            
+            # Check for bot detection
+            if "Verify you are human" in text or "Check if there is a typo" in text:
+                continue
+            break
+        except Exception:
+            continue
 
-    # 1. Extract Post ID from the share URL
+    if not text:
+        raise Exception("Meta AI blocked the request or the page is unavailable. Please try again in a few minutes.")
+
+    # 1. Extract Post ID from the share URL (optional)
     post_id_match = re.search(r'/post/([^/?]+)', share_url)
-    if not post_id_match:
-        raise Exception("Could not extract post ID from URL.")
-    post_id = post_id_match.group(1)
+    post_id = post_id_match.group(1) if post_id_match else None
 
-    # 2. Parse ALL Next.js data chunks (json.loads decodes \u0026 -> & automatically)
+    # 2. Parse ALL Next.js data chunks
     parsed_chunks = []
     chunks = re.findall(r'self\.__next_f\.push\((.*?)\)</script>', text)
     for chunk in chunks:
@@ -78,46 +108,67 @@ def extract_video_url(share_url: str) -> str:
 
     # 3. Find the reference ID for this post's video URL
     ref_id = None
-    for chunk_str in parsed_chunks:
-        if post_id in chunk_str:
-            idx = chunk_str.find(post_id)
-            sub = chunk_str[max(0, idx - 10):idx + 1500]
-            url_match = re.search(r'\\?"url\\?":\\?"\\$([^"$\\]+)\\?"', sub)
-            if url_match:
-                ref_id = url_match.group(1)
-                break
+    if post_id:
+        for chunk_str in parsed_chunks:
+            # Check for post_id in various formats
+            if post_id in chunk_str:
+                idx = chunk_str.find(post_id)
+                # Search a window around the post_id for the video URL reference
+                sub = chunk_str[max(0, idx - 100):idx + 2000]
+                # Match "url":"$73" or \"url\":\"$73\"
+                url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
+                if url_match:
+                    ref_id = url_match.group(1)
+                    break
 
     # 4. Resolve the reference ID to the actual video URL
-    #    Search PARSED chunks where \u0026 is already decoded to &
     if ref_id:
-        for chunk_str in parsed_chunks:
-            if f'{ref_id}:T' in chunk_str or f'{ref_id}:"' in chunk_str:
-                idx = chunk_str.find(f'{ref_id}:T')
-                if idx == -1:
-                    idx = chunk_str.find(f'{ref_id}:"')
+        # Search both parsed chunks and raw text for the resolved URL
+        # We look for patterns like 73:T or 73:" or 73:\"
+        search_sources = parsed_chunks + [text]
+        for source in search_sources:
+            for pattern in [f'{ref_id}:T', f'{ref_id}:"', f'{ref_id}:\\"']:
+                idx = source.find(pattern)
                 if idx != -1:
-                    sub = chunk_str[idx:idx + 3000]
-                    mp4_match = re.search(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', sub)
+                    sub = source[idx:idx + 3000]
+                    mp4_match = re.search(r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)', sub)
                     if mp4_match:
                         u = mp4_match.group(1)
-                        # Strip any trailing Next.js chunk separator
+                        # Clean the URL (unescape characters)
+                        u = u.replace(r'\u0026', '&').replace('\\\\', '\\').replace('\\/', '/')
+                        # Strip any trailing Next.js chunk separator junk
                         u = re.sub(r'[a-z0-9]+:T[a-z0-9]+,.*$', '', u)
                         u = u.rstrip('\\')
                         return u
 
-    # 5. Fallback: scan all URLs in parsed chunks (& already decoded) and pick
-    #    the largest progressive one to avoid random 5-second thumbnails.
+    # 5. Fallback: scan all URLs in parsed chunks and raw text.
+    #    Be very aggressive: look for anything that looks like a Meta video CDN URL.
     fallback_urls = []
-    for chunk_str in parsed_chunks:
-        matches = re.findall(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', chunk_str)
-        fallback_urls.extend(matches)
+    search_sources = parsed_chunks + [text]
+    
+    # Broad patterns for Meta videos
+    patterns = [
+        r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)',
+        r'(https?://video[^\s"\'<>\\]+\.fbcdn\.net/[^\s"\'<>\\]+)',
+        r'(https?://[^\s"\'<>\\]+efg=[^\s"\'<>\\]+)'
+    ]
+    
+    for source in search_sources:
+        for pattern in patterns:
+            matches = re.findall(pattern, source)
+            for m in matches:
+                u = m.replace(r'\u0026', '&').replace('\\\\', '\\').replace('\\/', '/')
+                fallback_urls.append(u)
 
-    # Also scan raw HTML as a last resort
     if not fallback_urls:
-        raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
-        fallback_urls = [unescape_url(u) for u in raw_urls]
+        # One last ditch effort: if it's a profile, look for any post IDs and try to follow the first one
+        if not post_id:
+            # Match alphanumeric IDs in strings that look like post paths
+            potential_posts = re.findall(r'/post/([a-zA-Z0-9]+)', text)
+            if potential_posts:
+                first_post_url = f"https://www.meta.ai/post/{potential_posts[0]}"
+                return extract_video_url(first_post_url)
 
-    if not fallback_urls:
         raise Exception(
             "Could not find a video in this Meta AI link. "
             "Make sure it is a direct video post URL (not an image or text post)."
