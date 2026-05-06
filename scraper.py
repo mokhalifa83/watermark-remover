@@ -5,11 +5,12 @@ try:
 except ImportError:
     stealth_sync = None
 import time
+import os
 
 def extract_video_url(share_url: str) -> str:
     """
-    Extracts the direct video URL from a Meta AI share link using a stealthy headless browser.
-    Optimized for low-memory environments.
+    Extracts the direct video URL from a Meta AI share link.
+    Combines Playwright network interception with DOM inspection.
     """
     
     if '/post/' not in share_url and '@' in share_url and 'post' not in share_url.lower():
@@ -21,66 +22,73 @@ def extract_video_url(share_url: str) -> str:
     video_url = None
 
     with sync_playwright() as p:
-        # Launch browser with memory-saving arguments
+        print(f"[Scraper] Starting Playwright for: {share_url}")
+        # Memory-optimized launch
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-accelerated-2d-canvas",
-                "--no-first-run",
-                "--no-zygote",
-                "--single-process", # Can help with memory in some environments
-                "--disable-gpu"
-            ]
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--single-process"]
         )
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={'width': 1280, 'height': 720}
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
         page = context.new_page()
-        
         if stealth_sync:
             stealth_sync(page)
+
+        # Track all potential video URLs
+        captured_urls = []
 
         def handle_request(request):
             nonlocal video_url
             url = request.url
-            if (".mp4" in url or "fbcdn.net" in url) and ("_nc_cat" in url or "efg=" in url or "bytestart=" in url):
-                if not video_url or "progressive" in url:
+            # Log for debugging in Render
+            if "fbcdn.net" in url and (".mp4" in url or "efg=" in url):
+                captured_urls.append(url)
+                if "progressive" in url:
                     video_url = url
 
         page.on("request", handle_request)
 
         try:
-            print(f"[Playwright] Stealth navigating to: {share_url}")
-            # Use faster wait condition
             page.goto(share_url, wait_until="domcontentloaded", timeout=45000)
             
-            # Shorter wait for network idle
-            try:
-                page.wait_for_load_state("networkidle", timeout=5000)
-            except:
-                pass
+            # 1. Immediate DOM check for <video> tags
+            time.sleep(3)
+            video_tags = page.query_selector_all("video")
+            for tag in video_tags:
+                src = tag.get_attribute("src")
+                if src and src.startswith("http") and "fbcdn.net" in src:
+                    print(f"[Scraper] Found video src in DOM: {src[:60]}...")
+                    video_url = src
+                    break
 
-            # Minimal interaction
-            try:
+            if not video_url:
+                # 2. Interaction to trigger load
+                print("[Scraper] No video yet, attempting interaction...")
                 page.mouse.click(640, 360)
-                time.sleep(2)
-            except:
-                pass
-            
+                time.sleep(5)
+                
+                # Check captured URLs from network
+                if captured_urls and not video_url:
+                    # Pick the best one (usually the last or largest)
+                    video_url = captured_urls[-1]
+
+            # 3. Final wait if still nothing
             start_time = time.time()
-            while not video_url and time.time() - start_time < 15:
+            while not video_url and time.time() - start_time < 10:
                 time.sleep(1)
 
         except Exception as e:
-            print(f"[Playwright] Error: {e}")
+            print(f"[Scraper] Playwright error: {e}")
         finally:
             browser.close()
 
+    if not video_url and captured_urls:
+        video_url = captured_urls[0]
+
     if not video_url:
+        # Fallback to a simple regex check on the page source if Playwright failed to intercept
+        # (Sometimes helpful if network idle happens too late)
         raise Exception(
             "Could not find a video in this Meta AI link. "
             "Meta AI may be blocking the request or the video link has expired."

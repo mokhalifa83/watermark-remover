@@ -8,8 +8,7 @@ import time
 
 def extract_video_url(share_url: str) -> str:
     """
-    Extracts the direct video URL from a Meta AI share link using a stealthy headless browser.
-    Optimized for low-memory environments.
+    Extracts the direct video URL from a Meta AI share link.
     """
     if '/post/' not in share_url and '@' in share_url and 'post' not in share_url.lower():
         raise Exception(
@@ -18,6 +17,7 @@ def extract_video_url(share_url: str) -> str:
         )
 
     video_url = None
+    captured_urls = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -34,27 +34,40 @@ def extract_video_url(share_url: str) -> str:
         def handle_request(request):
             nonlocal video_url
             url = request.url
-            if (".mp4" in url or "fbcdn.net" in url) and ("_nc_cat" in url or "efg=" in url or "bytestart=" in url):
-                if not video_url or "progressive" in url:
+            if "fbcdn.net" in url and (".mp4" in url or "efg=" in url):
+                captured_urls.append(url)
+                if "progressive" in url:
                     video_url = url
 
         page.on("request", handle_request)
 
         try:
-            print(f"[Playwright] Stealth navigating to: {share_url}")
             page.goto(share_url, wait_until="domcontentloaded", timeout=45000)
-            try:
-                page.wait_for_load_state("networkidle", timeout=5000)
-            except:
-                pass
+            time.sleep(3)
+            
+            # Check DOM
+            video_tags = page.query_selector_all("video")
+            for tag in video_tags:
+                src = tag.get_attribute("src")
+                if src and "fbcdn.net" in src:
+                    video_url = src
+                    break
+
+            if not video_url:
+                page.mouse.click(640, 360)
+                time.sleep(5)
+            
             start_time = time.time()
-            while not video_url and time.time() - start_time < 15:
+            while not video_url and time.time() - start_time < 10:
                 time.sleep(1)
 
         except Exception as e:
-            print(f"[Playwright] Error: {e}")
+            print(f"[Scraper] Error: {e}")
         finally:
             browser.close()
+
+    if not video_url and captured_urls:
+        video_url = captured_urls[-1]
 
     if not video_url:
         raise Exception(
