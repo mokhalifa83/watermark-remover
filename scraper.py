@@ -59,11 +59,9 @@ def extract_video_url(share_url: str) -> str:
     response.raise_for_status()
     text = response.text
 
-    # 1. Extract Post ID from the share URL
+    # 1. Extract Post ID from the share URL (optional)
     post_id_match = re.search(r'/post/([^/?]+)', share_url)
-    if not post_id_match:
-        raise Exception("Could not extract post ID from URL.")
-    post_id = post_id_match.group(1)
+    post_id = post_id_match.group(1) if post_id_match else None
 
     # 2. Parse ALL Next.js data chunks
     parsed_chunks = []
@@ -78,17 +76,18 @@ def extract_video_url(share_url: str) -> str:
 
     # 3. Find the reference ID for this post's video URL
     ref_id = None
-    for chunk_str in parsed_chunks:
-        # Check for post_id in various formats
-        if post_id in chunk_str:
-            idx = chunk_str.find(post_id)
-            # Search a window around the post_id for the video URL reference
-            sub = chunk_str[max(0, idx - 100):idx + 2000]
-            # Match "url":"$73" or \"url\":\"$73\"
-            url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
-            if url_match:
-                ref_id = url_match.group(1)
-                break
+    if post_id:
+        for chunk_str in parsed_chunks:
+            # Check for post_id in various formats
+            if post_id in chunk_str:
+                idx = chunk_str.find(post_id)
+                # Search a window around the post_id for the video URL reference
+                sub = chunk_str[max(0, idx - 100):idx + 2000]
+                # Match "url":"$73" or \"url\":\"$73\"
+                url_match = re.search(r'\\?"url\\?":\\?"\$([^"$\\]+)\\?"', sub)
+                if url_match:
+                    ref_id = url_match.group(1)
+                    break
 
     # 4. Resolve the reference ID to the actual video URL
     if ref_id:
