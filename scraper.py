@@ -6,9 +6,19 @@ import json
 import concurrent.futures
 
 HEADERS = {
-    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language': 'en-US,en;q=0.9',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
 }
 
 
@@ -55,9 +65,31 @@ def extract_video_url(share_url: str) -> str:
 
     Falls back to picking the largest progressive video if reference tracing fails.
     """
-    response = requests.get(share_url, headers=HEADERS, timeout=15)
-    response.raise_for_status()
-    text = response.text
+    # Try with a few different headers if blocked
+    ua_list = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    ]
+    
+    text = ""
+    for ua in ua_list:
+        try:
+            current_headers = HEADERS.copy()
+            current_headers['User-Agent'] = ua
+            response = requests.get(share_url, headers=current_headers, timeout=15)
+            response.raise_for_status()
+            text = response.text
+            
+            # Check for bot detection
+            if "Verify you are human" in text or "Check if there is a typo" in text:
+                continue
+            break
+        except Exception:
+            continue
+
+    if not text:
+        raise Exception("Meta AI blocked the request or the page is unavailable. Please try again in a few minutes.")
 
     # 1. Extract Post ID from the share URL (optional)
     post_id_match = re.search(r'/post/([^/?]+)', share_url)
@@ -129,6 +161,14 @@ def extract_video_url(share_url: str) -> str:
                 fallback_urls.append(u)
 
     if not fallback_urls:
+        # One last ditch effort: if it's a profile, look for any post IDs and try to follow the first one
+        if not post_id:
+            # Match alphanumeric IDs in strings that look like post paths
+            potential_posts = re.findall(r'/post/([a-zA-Z0-9]+)', text)
+            if potential_posts:
+                first_post_url = f"https://www.meta.ai/post/{potential_posts[0]}"
+                return extract_video_url(first_post_url)
+
         raise Exception(
             "Could not find a video in this Meta AI link. "
             "Make sure it is a direct video post URL (not an image or text post)."
