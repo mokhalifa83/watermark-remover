@@ -20,6 +20,7 @@ def extract_video_url(share_url: str) -> str:
     with sync_playwright() as p:
         # Launch browser with a realistic User-Agent
         browser = p.chromium.launch(headless=True)
+        # Create context with a realistic user agent
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
@@ -29,9 +30,9 @@ def extract_video_url(share_url: str) -> str:
         def handle_request(request):
             nonlocal video_url
             url = request.url
-            # Look for Meta video CDN patterns
-            if (".mp4" in url or "fbcdn.net" in url) and "efg=" in url:
-                # We prioritize urls with "progressive" in the encoded efg or substantial urls
+            # Meta video CDN patterns
+            if (".mp4" in url or "fbcdn.net" in url) and ("efg=" in url or "bytestart=" in url):
+                # Prioritize progressive or higher quality if possible
                 if not video_url or "progressive" in url:
                     video_url = url
 
@@ -39,24 +40,25 @@ def extract_video_url(share_url: str) -> str:
 
         try:
             print(f"[Playwright] Navigating to: {share_url}")
-            # Navigate and wait for some network idle or a timeout
-            page.goto(share_url, wait_until="networkidle", timeout=30000)
+            # Navigate and wait for network to be idle (full load)
+            page.goto(share_url, wait_until="networkidle", timeout=60000)
             
-            # Give it a few extra seconds for the video to actually trigger a request if it hasn't
+            # Give it some time to actually start the video if it's autoplay
             start_time = time.time()
-            while not video_url and time.time() - start_time < 10:
+            while not video_url and time.time() - start_time < 15:
                 time.sleep(0.5)
+                # Attempt to find a video tag and click it if needed? 
+                # Meta usually autoplays or loads the source on network idle.
 
         except Exception as e:
-            print(f"[Playwright] Navigation error: {e}")
+            print(f"[Playwright] Error during extraction: {e}")
         finally:
             browser.close()
 
     if not video_url:
         raise Exception(
             "Could not find a video in this Meta AI link. "
-            "Meta AI may have blocked the request or the link is invalid."
+            "The link might have expired, or Meta AI is blocking headless browsers."
         )
 
-    # Clean the captured URL
     return video_url
