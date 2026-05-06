@@ -62,6 +62,14 @@ def extract_video_url(share_url):
 
             # 1. Process entries - ONLY trust the first one to avoid random suggestions
             if 'entries' in info_dict:
+                # If it's a playlist/profile, we must ensure we are not just picking a random first video
+                # Check if the share_url is a direct post link
+                if '/post/' not in share_url:
+                     raise Exception(
+                        "Could not find a video in this Meta AI link. "
+                        "Make sure it is a direct video post URL (not a profile page)."
+                    )
+                
                 entries = list(info_dict['entries'])
                 print(f"[Method 1] Found playlist with {len(entries)} entries")
                 if entries:
