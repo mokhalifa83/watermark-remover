@@ -3,13 +3,17 @@ from flask import Flask, request, jsonify, send_file, Response, stream_with_cont
 from flask_cors import CORS
 import requests
 
-from scraper import extract_video_url
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+try:
+    from scraper_v2 import extract_video_url
+except ImportError:
+    from scraper import extract_video_url
 
 @app.route('/api/remove-watermark', methods=['POST'])
 def remove_watermark():
@@ -19,12 +23,19 @@ def remove_watermark():
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
 
+    print(f"Processing URL: {url}")
     try:
         video_url = extract_video_url(url)
-        # TODO: Add logic to download video, process it (remove watermark), and return the processed file path
-        # For now, just returning the extracted video URL
-        return jsonify({'message': 'Video URL extracted', 'video_url': video_url})
+        if not video_url:
+            return jsonify({'error': 'Could not extract video URL. Please ensure the link is a direct video post.'}), 404
+            
+        return jsonify({
+            'message': 'Video URL extracted', 
+            'video_url': video_url,
+            'success': True
+        })
     except Exception as e:
+        print(f"Extraction error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/proxy-download', methods=['GET'])

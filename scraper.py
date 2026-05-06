@@ -72,24 +72,29 @@ def extract_video_url(share_url: str) -> str:
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     ]
     
+    session = requests.Session()
     text = ""
     for ua in ua_list:
         try:
             current_headers = HEADERS.copy()
             current_headers['User-Agent'] = ua
-            response = requests.get(share_url, headers=current_headers, timeout=15)
+            response = session.get(share_url, headers=current_headers, timeout=15)
             response.raise_for_status()
             text = response.text
             
             # Check for bot detection
-            if "Verify you are human" in text or "Check if there is a typo" in text:
+            if "Verify you are human" in text or "Check if there is a typo" in text or "Checking your browser" in text:
+                text = "" # Reset to try next UA
                 continue
             break
         except Exception:
             continue
 
     if not text:
-        raise Exception("Meta AI blocked the request or the page is unavailable. Please try again in a few minutes.")
+        raise Exception(
+            "Meta AI blocked the request or the page is unavailable. "
+            "This often happens after multiple requests. Please wait a few minutes or try a different video link."
+        )
 
     # 1. Extract Post ID from the share URL (optional)
     post_id_match = re.search(r'/post/([^/?]+)', share_url)
@@ -186,18 +191,32 @@ def extract_video_url(share_url: str) -> str:
     if not prog_urls:
         prog_urls = cleaned_urls
 
+    if not prog_urls:
+        raise Exception(
+            "Found Meta AI content, but could not locate a downloadable video stream. "
+            "The content may be an image, text-only, or protected."
+        )
+
     def _check_size(url):
         try:
-            h = requests.head(url, timeout=5, headers=HEADERS)
+            # Use a random UA for size checking too to avoid detection
+            import random
+            ua = random.choice(ua_list)
+            h = requests.head(url, timeout=5, headers={'User-Agent': ua, 'Referer': 'https://www.meta.ai/'})
             return url, int(h.headers.get('Content-Length', 0))
         except Exception:
             return url, 0
 
-    best_url, best_size = prog_urls[0], 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        for url, size in executor.map(lambda u: _check_size(u), prog_urls):
-            if size > best_size:
-                best_size = size
-                best_url = url
+    best_url = prog_urls[0]
+    best_size = 0
+    
+    # Only check sizes if we have multiple candidates to avoid unnecessary requests
+    if len(prog_urls) > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(prog_urls), 10)) as executor:
+            results = list(executor.map(_check_size, prog_urls))
+            for url, size in results:
+                if size > best_size:
+                    best_size = size
+                    best_url = url
 
     return best_url
