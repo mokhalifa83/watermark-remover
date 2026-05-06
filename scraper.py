@@ -109,17 +109,24 @@ def extract_video_url(share_url: str) -> str:
                         u = u.rstrip('\\')
                         return u
 
-    # 5. Fallback: scan all URLs in parsed chunks and pick
-    #    the largest progressive one.
+    # 5. Fallback: scan all URLs in parsed chunks and raw text.
+    #    Be very aggressive: look for anything that looks like a Meta video CDN URL.
     fallback_urls = []
-    for chunk_str in parsed_chunks:
-        matches = re.findall(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', chunk_str)
-        fallback_urls.extend(matches)
-
-    # Also scan raw HTML as a last resort
-    if not fallback_urls:
-        raw_urls = re.findall(r'https://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
-        fallback_urls = [unescape_url(u) for u in raw_urls]
+    search_sources = parsed_chunks + [text]
+    
+    # Broad patterns for Meta videos
+    patterns = [
+        r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)',
+        r'(https?://video[^\s"\'<>\\]+\.fbcdn\.net/[^\s"\'<>\\]+)',
+        r'(https?://[^\s"\'<>\\]+efg=[^\s"\'<>\\]+)'
+    ]
+    
+    for source in search_sources:
+        for pattern in patterns:
+            matches = re.findall(pattern, source)
+            for m in matches:
+                u = m.replace(r'\u0026', '&').replace('\\\\', '\\').replace('\\/', '/')
+                fallback_urls.append(u)
 
     if not fallback_urls:
         raise Exception(
