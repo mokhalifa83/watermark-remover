@@ -166,13 +166,11 @@ def extract_video_url(share_url: str) -> str:
                 fallback_urls.append(u)
 
     if not fallback_urls:
-        # One last ditch effort: if it's a profile, look for any post IDs and try to follow the first one
         if not post_id:
-            # Match alphanumeric IDs in strings that look like post paths
-            potential_posts = re.findall(r'/post/([a-zA-Z0-9]+)', text)
-            if potential_posts:
-                first_post_url = f"https://www.meta.ai/post/{potential_posts[0]}"
-                return extract_video_url(first_post_url)
+            raise Exception(
+                "Could not find a video in this Meta AI link. "
+                "Make sure it is a direct video post URL (not a profile page)."
+            )
 
         raise Exception(
             "Could not find a video in this Meta AI link. "
