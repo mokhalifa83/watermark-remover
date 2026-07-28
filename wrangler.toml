@@ -1,0 +1,7 @@
+name = "clearview-api"
+main = "worker/index.js"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+workers_dev = true

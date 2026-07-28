@@ -1,0 +1,13 @@
+{
+  "name": "clearview-ai",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "pages:deploy": "wrangler pages publish frontend --project-name clearview"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
