@@ -1,197 +1,175 @@
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Max-Age': '86400',
+addEventListener("fetch", event => {
+  event.respondWith(handle(event.request));
+});
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
 
-export default {
-  async fetch(request) {
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS_HEADERS });
-    }
+function json(data, status) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: { "Content-Type": "application/json", ...CORS },
+  });
+}
 
-    const url = new URL(request.url);
-
-    if (url.pathname === '/api/extract' && request.method === 'POST') {
-      return handleExtract(request);
-    }
-
-    if (url.pathname === '/api/proxy' && request.method === 'GET') {
-      return handleProxy(request);
-    }
-
-    return new Response('ClearView API is running. Use /api/extract endpoint.', {
-      headers: { 'Content-Type': 'text/plain', ...CORS_HEADERS },
-    });
-  },
-};
+async function handle(request) {
+  var url = new URL(request.url);
+  if (url.pathname === "/api/extract" && request.method === "POST") return handleExtract(request);
+  if (url.pathname === "/api/proxy" && request.method === "GET") return handleProxy(request);
+  if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
+  return new Response(HTML, {
+    status: 200,
+    headers: { "Content-Type": "text/html;charset=utf-8", ...CORS },
+  });
+}
 
 async function handleExtract(request) {
   try {
-    const { url: metaUrl } = await request.json();
-    if (!metaUrl) {
-      return jsonResponse({ error: 'No URL provided' }, 400);
-    }
-
-    const videoUrl = await extractVideoUrl(metaUrl);
-    return jsonResponse({ video_url: videoUrl });
+    var data = await request.json();
+    if (!data || !data.url) return json({ error: "No URL" }, 400);
+    var videoUrl = await extractVideoUrl(data.url);
+    return json({ video_url: videoUrl });
   } catch (err) {
-    return jsonResponse({ error: err.message }, 500);
+    return json({ error: err.message }, 500);
   }
 }
 
 async function handleProxy(request) {
-  const url = new URL(request.url);
-  const videoUrl = url.searchParams.get('url');
-  const filename = url.searchParams.get('filename') || 'video_no_watermark.mp4';
-
-  if (!videoUrl) {
-    return jsonResponse({ error: 'No URL provided' }, 400);
-  }
-
-  const proxyHeaders = {
-    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-    'Referer': 'https://www.meta.ai/',
-    'Accept': '*/*',
-    'Accept-Language': 'en-US,en;q=0.9',
-  };
-
+  var url = new URL(request.url);
+  var videoUrl = url.searchParams.get("url");
+  if (!videoUrl) return json({ error: "No URL" }, 400);
   try {
-    const videoResponse = await fetch(videoUrl, { headers: proxyHeaders });
-
-    if (videoResponse.status === 403) {
-      return jsonResponse(
-        { error: 'Video URL expired. Please try again with a fresh link.' },
-        410,
-      );
-    }
-
-    const responseHeaders = new Headers(videoResponse.headers);
-    responseHeaders.set('Content-Disposition', `attachment; filename="${filename}"`);
-    responseHeaders.set('Access-Control-Allow-Origin', '*');
-
-    return new Response(videoResponse.body, {
-      status: videoResponse.status,
-      headers: responseHeaders,
+    var vr = await fetch(videoUrl, {
+      headers: { "User-Agent": "facebookexternalhit/1.1", "Referer": "https://www.meta.ai/" },
     });
+    if (vr.status === 403) return json({ error: "URL expired" }, 410);
+    var h = new Headers(vr.headers);
+    h.set("Access-Control-Allow-Origin", "*");
+    return new Response(vr.body, { status: vr.status, headers: h });
   } catch (err) {
-    return jsonResponse({ error: err.message }, 500);
+    return json({ error: err.message }, 500);
   }
 }
 
 async function extractVideoUrl(shareUrl) {
-  const fetchHeaders = {
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US,en;q=0.9',
-    Accept: 'text/html,application/xhtml+xml',
-  };
-
-  const response = await fetch(shareUrl, {
-    headers: fetchHeaders,
-    redirect: 'follow',
+  var r = await fetch(shareUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Accept-Language": "en-US,en;q=0.9" },
+    redirect: "follow",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch page: ${response.status}`);
-  }
-
-  const text = await response.text();
-  const mp4Regex = /https:\/\/[^\s<>"']+\.mp4(?:\?[^\s<>"']*)?/g;
-
-  const candidates = [];
-  let bestUrl = null;
-  let bestResolution = 0;
-  let fallbackUrl = null;
-  let fallbackSize = 0;
-
-  const seen = new Set();
-
-  for (const match of text.matchAll(mp4Regex)) {
-    let raw = match[0];
-
-    let clean = raw
-      .replace(/\\u0026/g, '&')
-      .replace(/&amp;/g, '&')
-      .replace(/\\\//g, '/')
-      .replace(/\\u003c[\s\S]*$/, '')
-      .replace(/\\$/, '');
-
-    const oeMatch = clean.match(/oe=[a-fA-F0-9]{8}/);
-    if (oeMatch) {
-      clean = clean.substring(0, oeMatch.index + oeMatch[0].length);
-    }
-
-    const lessThanIdx = clean.indexOf('<');
-    if (lessThanIdx !== -1) {
-      clean = clean.substring(0, lessThanIdx);
-    }
-
-    if (seen.has(clean)) continue;
-    seen.add(clean);
-
-    const efgMatch = clean.match(/efg=([^&]+)/);
-    if (!efgMatch) continue;
-
+  if (!r.ok) throw new Error("Failed: " + r.status);
+  var t = await r.text();
+  var re = /https:\/\/[^\s<>"']+\.mp4(?:\?[^\s<>"']*)?/g;
+  var cs = [];
+  var seen = {};
+  var m;
+  while ((m = re.exec(t)) !== null) {
+    var c = m[0].replace(/\\u0026/g, "&").replace(/&amp;/g, "&").replace(/\\\//g, "/");
+    var oe = c.match(/oe=[a-fA-F0-9]{8}/);
+    if (oe) c = c.substring(0, oe.index + oe[0].length);
+    var lt = c.indexOf("<");
+    if (lt > -1) c = c.substring(0, lt);
+    if (seen[c]) continue;
+    seen[c] = true;
+    var efg = c.match(/efg=([^&]+)/);
+    if (!efg) continue;
     try {
-      const efgEncoded = efgMatch[1];
-      const efgDecoded = decodeURIComponent(efgEncoded);
-      const padding = (4 - (efgDecoded.length % 4)) % 4;
-      const efgJson = atob(efgDecoded + '='.repeat(padding));
-      const efg = JSON.parse(efgJson);
-
-      const tag = efg.vencode_tag || efg.encoding_tag || '';
-      const isProgressive = tag.includes('progressive');
-
-      if (isProgressive) {
-        const resMatch = tag.match(/(\d+)p/);
-        const resolution = resMatch ? parseInt(resMatch[1], 10) : 0;
-        candidates.push({ url: clean, resolution, tag });
+      var d = decodeURIComponent(efg[1]);
+      var pg = (4 - (d.length % 4)) % 4;
+      var meta = JSON.parse(atob(d + "=".repeat(pg)));
+      var tag = meta.vencode_tag || meta.encoding_tag || "";
+      if (tag.indexOf("progressive") > -1) {
+        var res = tag.match(/(\d+)p/);
+        cs.push({ u: c, r: res ? parseInt(res[1], 10) : 0, tag: tag });
       }
-
-      if (!isProgressive && !efg.video_id && !tag.includes('dash-audio')) {
-        const bitrate = efg.bitrate || 0;
-        candidates.push({ url: clean, resolution: 0, tag, bitrate });
-      }
-    } catch {
-      // skip entries with unparseable efg
+    } catch (e) {}
+  }
+  var best = null, bestR = 0;
+  for (var i = 0; i < cs.length; i++) {
+    if (cs[i].tag.indexOf("progressive") > -1 && cs[i].r > bestR) {
+      best = cs[i].u;
+      bestR = cs[i].r;
     }
   }
-
-  for (const c of candidates) {
-    if (c.tag && c.tag.includes('progressive')) {
-      if (c.resolution > bestResolution) {
-        bestResolution = c.resolution;
-        bestUrl = c.url;
-      }
-    }
-  }
-
-  if (!bestUrl) {
-    for (const c of candidates) {
-      if (c.bitrate && c.bitrate > fallbackSize) {
-        fallbackSize = c.bitrate;
-        fallbackUrl = c.url;
-      }
-    }
-    if (fallbackUrl) {
-      bestUrl = fallbackUrl;
-    }
-  }
-
-  if (!bestUrl) {
-    throw new Error(
-      'Could not find a video in this Meta AI link. Make sure it is a direct video post URL.',
-    );
-  }
-
-  return bestUrl;
+  if (!best) throw new Error("No video found");
+  return best;
 }
 
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
-  });
+var HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ClearView</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{background:#020202;color:#fff;line-height:1.6}
+.container{max-width:1200px;margin:0 auto;padding:0 1.5rem}
+.hero{min-height:90vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:4rem 0}
+.hero h1{font-size:3rem;font-weight:900;margin-bottom:1rem}
+.hero h1 span{background:linear-gradient(to right,#fff 20%,#ef4444 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{color:#a3a3a3;max-width:500px;margin:0 auto 2rem}
+.input-group{border:1px solid rgba(255,50,50,0.15);padding:6px;border-radius:100px;display:flex;max-width:550px;margin:0 auto;background:rgba(255,255,255,0.03)}
+input{flex:1;background:transparent;border:none;padding:1rem 1.5rem;font-size:1rem;color:#fff;outline:none}
+input::placeholder{color:rgba(255,255,255,0.3)}
+.btn{background:linear-gradient(135deg,#e50914 0%,#800000 100%);color:#fff;border:none;padding:0 1.5rem;border-radius:100px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:0 4px 15px rgba(229,9,20,0.4)}
+.btn:disabled{opacity:.7;cursor:not-allowed}
+.result-card{margin-top:2rem;border:1px solid rgba(255,50,50,0.15);border-radius:24px;padding:2rem;max-width:700px;margin:auto}
+.hidden{display:none!important}
+.error{color:#ff4d4d;margin-top:1rem}
+footer{padding:2rem 0;text-align:center;color:#a3a3a3;border-top:1px solid rgba(255,50,50,0.15)}
+@media(max-width:768px){
+.hero h1{font-size:2rem}
+.input-group{flex-direction:column;border-radius:12px;padding:.75rem}
+input{width:100%;padding:.8rem;text-align:center;margin-bottom:.5rem}
+.btn{width:100%;padding:1rem}
 }
+</style>
+</head>
+<body>
+<div class="container">
+<section class="hero">
+<h1>Remove Meta AI Watermarks<br><span>Free Online Tool</span></h1>
+<p class="subtitle">Paste your Meta AI video link and get a clean video.</p>
+<div class="input-group">
+<input type="text" id="url" placeholder="Paste Meta AI video link...">
+<button id="go" class="btn">Remove Watermark</button>
+</div>
+<p id="error" class="error hidden"></p>
+<div id="result" class="result-card hidden">
+<div id="videoWrapper"></div>
+<div class="result-actions" style="margin-top:1.5rem;display:flex;gap:1rem;justify-content:center">
+<a href="#" id="download" class="btn" style="display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.5rem;text-decoration:none">Download</a>
+<button id="reset" class="btn" style="background:transparent;border:1px solid rgba(255,255,255,0.2);box-shadow:none">Another</button>
+</div>
+</div>
+</section>
+</div>
+<footer><div class="container"><p>&copy; 2026 ClearView</p></div></footer>
+<script>
+document.getElementById("go").onclick=async function(){
+  var u=document.getElementById("url").value.trim();
+  var er=document.getElementById("error");
+  var r=document.getElementById("result");
+  if(!u){er.textContent="Enter a URL";er.classList.remove("hidden");return;}
+  er.classList.add("hidden");r.classList.add("hidden");
+  var btn=document.getElementById("go");btn.disabled=true;btn.textContent="Processing...";
+  try{
+    var p=await(await fetch("/api/extract",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:u})})).json();
+    if(p.error)throw new Error(p.error);
+    var proxyUrl="/api/proxy?url="+encodeURIComponent(p.video_url)+"&filename=video.mp4";
+    document.getElementById("videoWrapper").innerHTML="<video controls width=\"100%\" src=\""+proxyUrl+"\" autoplay></video>";
+    document.getElementById("download").href=proxyUrl;
+    r.classList.remove("hidden");
+  }catch(e){er.textContent=e.message;er.classList.remove("hidden");}
+  finally{btn.disabled=false;btn.textContent="Remove Watermark";}
+};
+document.getElementById("reset").onclick=function(){
+  document.getElementById("result").classList.add("hidden");
+  document.getElementById("url").value="";
+};
+</script>
+</body>
+</html>`;
