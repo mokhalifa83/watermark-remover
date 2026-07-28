@@ -1,4 +1,4 @@
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const API_URL = 'https://watermark-remover.mokhalifa83.workers.dev/api';
 
 document.addEventListener('DOMContentLoaded', () => {
     const urlInput = document.getElementById('url-input');
@@ -21,14 +21,14 @@ document.addEventListener('DOMContentLoaded', () => {
         setLoading(true);
 
         try {
-            const proxyUrl = CORS_PROXY + encodeURIComponent(url);
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error('Failed to fetch page: ' + response.status);
-            const text = await response.text();
-
-            const videoUrl = extractVideoUrl(text);
-            if (!videoUrl) throw new Error('Could not find a video in this link. Make sure it is a direct Meta AI video post URL.');
-            showResult(videoUrl);
+            const response = await fetch(API_URL + '/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+            const data = await response.json();
+            if (!response.ok || data.error) throw new Error(data.error || 'Failed to process video');
+            showResult(data.video_url);
         } catch (error) {
             showError(error.message);
         } finally {
@@ -58,13 +58,14 @@ document.addEventListener('DOMContentLoaded', () => {
         resultContainer.classList.remove('hidden');
         urlInput.parentElement.classList.add('hidden');
 
-        downloadBtn.href = videoUrl;
+        const proxyUrl = API_URL + '/proxy?url=' + encodeURIComponent(videoUrl) + '&filename=video_no_watermark.mp4';
+        downloadBtn.href = proxyUrl;
         downloadBtn.setAttribute('download', 'video_no_watermark.mp4');
 
         const videoWrapper = resultContainer.querySelector('.video-wrapper');
         videoWrapper.innerHTML = `
             <video controls width="100%" style="border-radius: 8px; background: #000;" autoplay
-                src="${videoUrl}" 
+                src="${proxyUrl}" 
                 onerror="this.parentElement.innerHTML += '<p style=\'color: #ff4d4d; margin-top: 10px;\'>Error loading video. The link may have expired. Try again.</p>'">
                 Your browser does not support the video tag.
             </video>
@@ -125,48 +126,3 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     statNumbers.forEach(stat => observer.observe(stat));
 });
-
-function extractVideoUrl(html) {
-    const mp4Regex = /https:\/\/[^\s<>"']+\.mp4(?:\?[^\s<>"']*)?/g;
-    const candidates = [];
-    const seen = {};
-    let match;
-
-    while ((match = mp4Regex.exec(html)) !== null) {
-        let clean = match[0]
-            .replace(/\\u0026/g, '&')
-            .replace(/&amp;/g, '&')
-            .replace(/\\\//g, '/');
-        const oeMatch = clean.match(/oe=[a-fA-F0-9]{8}/);
-        if (oeMatch) clean = clean.substring(0, oeMatch.index + oeMatch[0].length);
-        const lt = clean.indexOf('<');
-        if (lt !== -1) clean = clean.substring(0, lt);
-        if (seen[clean]) continue;
-        seen[clean] = true;
-
-        const efgMatch = clean.match(/efg=([^&]+)/);
-        if (!efgMatch) continue;
-
-        try {
-            const efgEncoded = efgMatch[1];
-            const efgDecoded = decodeURIComponent(efgEncoded);
-            const padding = (4 - (efgDecoded.length % 4)) % 4;
-            const efg = JSON.parse(atob(efgDecoded + '='.repeat(padding)));
-            const tag = efg.vencode_tag || efg.encoding_tag || '';
-            if (tag.indexOf('progressive') !== -1) {
-                const resMatch = tag.match(/(\d+)p/);
-                const res = resMatch ? parseInt(resMatch[1], 10) : 0;
-                candidates.push({ url: clean, resolution: res, tag: tag });
-            }
-        } catch (e) {}
-    }
-
-    let bestUrl = null, bestRes = 0;
-    for (const c of candidates) {
-        if (c.tag.indexOf('progressive') !== -1 && c.resolution > bestRes) {
-            bestRes = c.resolution;
-            bestUrl = c.url;
-        }
-    }
-    return bestUrl;
-}
