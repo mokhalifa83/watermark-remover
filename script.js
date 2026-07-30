@@ -99,30 +99,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const statNumbers = document.querySelectorAll('.stat-number[data-count]');
-    const animateCount = (element) => {
-        const target = parseInt(element.getAttribute('data-count'));
-        const duration = 2000;
-        const increment = target / (duration / 16);
-        let current = 0;
-        const updateCount = () => {
-            current += increment;
-            if (current < target) {
-                element.textContent = Math.floor(current).toLocaleString();
-                requestAnimationFrame(updateCount);
-            } else {
-                element.textContent = target.toLocaleString();
-            }
-        };
-        updateCount();
-    };
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                animateCount(entry.target);
-                observer.unobserve(entry.target);
-            }
-        });
-    });
-    statNumbers.forEach(stat => observer.observe(stat));
+
 });

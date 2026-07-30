@@ -3,4 +3,4 @@ Allow: /
 Disallow: /api/
 Disallow: /admin/
 
-Sitemap: https://clearview.ai/sitemap.xml
+Sitemap: https://clearviewvideo.net/sitemap.xml
